@@ -35,7 +35,7 @@ pico_sdk_init()
 
 # Add executable. Default name is the project name, version 0.1
 
-add_executable(3kW_Stepper 3kW_Stepper.c )
+add_executable(3kW_Stepper 3kW_Stepper.c stepper_functions.c )
 
 pico_set_program_name(3kW_Stepper "3kW_Stepper")
 pico_set_program_version(3kW_Stepper "0.1")
