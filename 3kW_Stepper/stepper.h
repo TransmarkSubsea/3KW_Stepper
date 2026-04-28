@@ -16,5 +16,4 @@
 #define Stepper_PULSE 18
 #define Near_Stop 19
 #define Far_Stop 20
-
 #define steps_per_rev 1600 //200 steps/rev with 8x microstepping

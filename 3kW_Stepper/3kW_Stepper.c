@@ -7,10 +7,15 @@
 #include "hardware/gpio.h"
 #include "stepper.h"
 
+
+
 // Volatile flag to signal pulse generation to stop
 volatile bool stop_pulse = false;
 volatile uint32_t last_interrupt_time = 0;
 const uint32_t DEBOUNCE_MS = 20; // Debounce time in milliseconds
+//wheel size is 18 teeth and each tooth has a pitch of 2.032 mm, so one revolution moves the wheel 36.576 mm. With 1600 steps per revolution at 8x microstepping, each step moves the wheel 0.02286 mm.
+const float Step_resolution = 0.02286; //1 step moves 0.02286 mm at 8x microstepping 
+
 
 // Interrupt handler for limit switches with debouncing
 void limit_switch_isr(uint gpio, uint32_t events) {
@@ -87,11 +92,13 @@ int main()
     gpio_put(Stepper_EN, 0); //Enable stepper driver
     gpio_put(Stepper_DIR, 0); //Set direction to forward
     
-    
-    uint16_t speed = 1; // Set speed here, range is 1-14 where 1 is slowest and 14 is fastest
-    uint32_t step_count = steps_per_rev*5; // Configure number of PWM pulses here
+    float Travel_distance = 300; // Set distance to move in mm
+    uint16_t speed = 11; // Set speed here, range is 1-14 where 1 is slowest and 14 is fastest
+    uint32_t step_count = 0;
     uint32_t Step_actual = 0; // Actual number of pulses generated
     float pulse_frequency = 0;
+
+    step_count = Travel_distance / Step_resolution; // Configure number of PWM pulses here
 
 
     if (speed > 11)
