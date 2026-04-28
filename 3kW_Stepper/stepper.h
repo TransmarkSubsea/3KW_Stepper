@@ -1,3 +1,5 @@
+
+
 // UART defines
 // By default the stdout UART is `uart0`, so we will use the second one
 #define UART_ID uart1
@@ -12,3 +14,7 @@
 #define Stepper_EN 16
 #define Stepper_DIR 17
 #define Stepper_PULSE 18
+#define Near_Stop 19
+#define Far_Stop 20
+
+#define steps_per_rev 1600 //200 steps/rev with 8x microstepping
