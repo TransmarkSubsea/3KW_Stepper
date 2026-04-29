@@ -16,6 +16,7 @@ volatile bool stop_pulse = false;// Volatile flag to signal pulse generation to 
 volatile uint32_t last_interrupt_time = 0;
 volatile uint32_t Step_actual = 0; // Actual number of pulses generated
 volatile int32_t Accumulated_Steps = 0; // Accumulated steps
+volatile float Accumulated_Distance = 0; // Accumulated distance in mm
 
 // Function prototypes
 void stepper_move(uint16_t speed, float travel_distance, bool direction);
@@ -76,17 +77,14 @@ int main()
 
     gpio_put(Stepper_EN, 0); //Enable stepper driver
     
-    float Travel_distance = 300; // Set distance to move in mm
-    uint16_t speed = 11; // Set speed here, range is 1-14 where 1 is slowest and 14 is fastest
+    float Travel_distance = 0.1; // Set distance to move in mm
+    uint16_t speed = 14; // Set speed here, range is 1-14 where 1 is slowest and 14 is fastest
     bool current_direction = 0; // 0 = forward, 1 = reverse
 
     while (true) 
     {
         stepper_move(speed, Travel_distance, Direction_Open);
-        sleep_ms(100);
-        stepper_move(speed, Travel_distance, Direction_Open);
-        sleep_ms(100);
-        stepper_move(speed, Travel_distance, Direction_Close);
+
         //current_direction = !current_direction; // Toggle direction for next move
 
         sleep_ms(2000);
