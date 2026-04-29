@@ -25,6 +25,8 @@ static char command_line[CLI_RX_BUFFER_SIZE];
 static uint32_t rx_index = 0;
 static volatile bool command_ready = false;
 static volatile bool moving = false;
+static uint8_t abs_soft_stop = 0;  // ABSS mode: 0=travel to 0mm, 1=travel to near_stop with -100mm limit
+static uint8_t rel_soft_stop = 0;  // RELS mode: 0=don't allow below 0mm, 1=travel to near_stop with -100mm limit
 
 // Forward declarations
 static void cli_uart_irq_handler(void);
@@ -59,7 +61,7 @@ void cli_init(void) {
 }
 
 /**
- * UART interrupt handler
+ * UART interrupt handler - keep this minimal to avoid interrupting PWM
  */
 static void cli_uart_irq_handler(void) {
     while (uart_is_readable(UART_ID)) {
@@ -69,6 +71,7 @@ static void cli_uart_irq_handler(void) {
         if (ch == '\b' || ch == 0x7F) {
             if (rx_index > 0) {
                 rx_index--;
+                // Echo backspace sequence
                 uart_putc(UART_ID, '\b');
                 uart_putc(UART_ID, ' ');
                 uart_putc(UART_ID, '\b');
@@ -76,19 +79,20 @@ static void cli_uart_irq_handler(void) {
             continue;
         }
         
-            // Handle newline/carriage return
+        // Handle newline/carriage return
         if (ch == '\n' || ch == '\r') {
             if (rx_index > 0 && !command_ready) {
                 rx_buffer[rx_index] = '\0';
                 cli_enqueue_command();
                 rx_index = 0;
             }
+            // Echo newline
             uart_putc(UART_ID, '\r');
             uart_putc(UART_ID, '\n');
             continue;
         }
         
-        // Echo and store printable characters
+        // Store and echo printable characters
         if (isprint(ch) && rx_index < CLI_RX_BUFFER_SIZE - 1) {
             rx_buffer[rx_index++] = ch;
             uart_putc(UART_ID, ch);
@@ -138,21 +142,27 @@ void cli_process(void) {
 
     // Handle help command
     if (strcmp(command, "help") == 0 || strcmp(command, "HELP") == 0) {
-        cli_broadcast("=== Stepper Motor CLI ===\n");
+        cli_broadcast("\n\n=== Stepper Motor CLI ===\n");
         cli_broadcast("Command syntax:\n");
         cli_broadcast("  MOVE ABS <speed> <value>\n");
         cli_broadcast("  MOVE REL <speed> <dir> <value>\n");
         cli_broadcast("  speed:  1-11 (1=slow, 11=fast)\n");
         cli_broadcast("  dir:    0=open/forward, 1=close/reverse (REL only)\n");
-        cli_broadcast("  value:  distance in mm for REL, absolute position in mm for ABS\n");
+        cli_broadcast("  value:  distance in mm for REL,");
+        cli_broadcast("  absolute position in mm for ABS\n\n");
         cli_broadcast("Example:\n");
         cli_broadcast("  MOVE REL 5 0 100   - Move open at speed 5 for 100mm\n");
-        cli_broadcast("  MOVE ABS 3 250     - Move to absolute position 250mm at speed 3\n");
-        cli_broadcast("Other commands:\n");
+        cli_broadcast("  MOVE ABS 3 250     - Move to absolute position ");
+        cli_broadcast("250mm at speed 3\n");
+        cli_broadcast("Other commands:\n\n");
         cli_broadcast("  STAT    - Show current status\n");
         cli_broadcast("  CALB    - Run calibration routine\n");
         cli_broadcast("  ENAB 0  - Enable stepper driver (active low)\n");
         cli_broadcast("  ENAB 1  - Disable stepper driver\n");
+        cli_broadcast("  ABSS 0  - Absolute mode: travel to 0mm (default)\n");
+        cli_broadcast("  ABSS 1  - Absolute mode: travel to near_stop (soft stop)\n");
+        cli_broadcast("  RELS 0  - Relative mode: don't allow travel below 0mm (default)\n");
+        cli_broadcast("  RELS 1  - Relative mode: travel to near_stop (soft stop)\n");
         cli_broadcast("  STOP    - Emergency stop\n");
         cli_broadcast("> ");
         return;
@@ -178,6 +188,16 @@ void cli_process(void) {
         if (strcmp(command, "ENAB") == 0 || strcmp(command, "enab") == 0) {
             bool enabled = (gpio_get(Stepper_EN) == 0);
             cli_broadcast("ENAB: %s\n", enabled ? "ENABLED" : "DISABLED");
+            cli_broadcast("> ");
+            return;
+        }
+        if (strcmp(command, "ABSS") == 0 || strcmp(command, "abss") == 0) {
+            cli_broadcast("ABSS: %s\n", abs_soft_stop == 1 ? "Limit Switch Stop" : "Calculated ZERO");
+            cli_broadcast("> ");
+            return;
+        }
+        if (strcmp(command, "RELS") == 0 || strcmp(command, "rels") == 0) {
+            cli_broadcast("RELS: %s\n", rel_soft_stop == 1 ? "Limit Switch Stop" : "Zero Boundary");
             cli_broadcast("> ");
             return;
         }
@@ -219,6 +239,56 @@ void cli_process(void) {
         } else if (value == 0) {
             gpio_put(Stepper_EN, 1);
             cli_broadcast("ENAB: DISABLED\n");
+        } else {
+            cli_print_error(CLI_ERR_INVALID_FORMAT);
+            cli_broadcast("> ");
+            return;
+        }
+        cli_broadcast("> ");
+        return;
+    }
+
+    // Handle absolute soft stop command
+    if (strncmp(command, "ABSS", 4) == 0 || strncmp(command, "abss", 4) == 0) {
+        char buffer[CLI_RX_BUFFER_SIZE];
+        strncpy(buffer, command, CLI_RX_BUFFER_SIZE - 1);
+        buffer[CLI_RX_BUFFER_SIZE - 1] = '\0';
+        char *token = strtok(buffer, " ");
+        token = strtok(NULL, " ");
+        if (!token) {
+            cli_print_error(CLI_ERR_INVALID_FORMAT);
+            cli_broadcast("> ");
+            return;
+        }
+        int value = atoi(token);
+        if (value == 1 || value == 0) {
+            abs_soft_stop = (uint8_t)value;
+            cli_broadcast("ABSS: %s\n", abs_soft_stop == 1 ? "Limit Switch Stop" : "Calculated ZERO");
+        } else {
+            cli_print_error(CLI_ERR_INVALID_FORMAT);
+            cli_broadcast("> ");
+            return;
+        }
+        cli_broadcast("> ");
+        return;
+    }
+
+    // Handle relative soft stop command
+    if (strncmp(command, "RELS", 4) == 0 || strncmp(command, "rels", 4) == 0) {
+        char buffer[CLI_RX_BUFFER_SIZE];
+        strncpy(buffer, command, CLI_RX_BUFFER_SIZE - 1);
+        buffer[CLI_RX_BUFFER_SIZE - 1] = '\0';
+        char *token = strtok(buffer, " ");
+        token = strtok(NULL, " ");
+        if (!token) {
+            cli_print_error(CLI_ERR_INVALID_FORMAT);
+            cli_broadcast("> ");
+            return;
+        }
+        int value = atoi(token);
+        if (value == 1 || value == 0) {
+            rel_soft_stop = (uint8_t)value;
+            cli_broadcast("RELS: %s\n", rel_soft_stop == 1 ? "Limit Switch Stop" : "Zero Boundary");
         } else {
             cli_print_error(CLI_ERR_INVALID_FORMAT);
             cli_broadcast("> ");
@@ -344,28 +414,62 @@ cli_error_t cli_execute_command(const cli_command_t *cmd) {
     uint8_t direction = cmd->direction;
 
     if (cmd->is_absolute) {
-        final_pos = cmd->value_mm;
-        if (final_pos == current_pos) {
-            printf("Already at absolute position %.2f mm\n", current_pos);
-            return CLI_ERR_OK;
-        }
-
-        if (final_pos > current_pos) {
-            direction = CLI_DIR_OPEN;
-            target_distance = final_pos - current_pos;
-        } else {
+        // Handle ABSS mode (soft stop)
+        if (abs_soft_stop == 1) {
+            // ABSS=1: Travel towards near_stop with -100mm limit
             direction = CLI_DIR_CLOSE;
-            target_distance = current_pos - final_pos;
+            target_distance = 100.0f;  // Move up to 100mm towards near_stop
+            final_pos = current_pos - target_distance;  // For range check only
+            printf("CMD ACK: ABSS mode=1, traveling towards near_stop\n");
+        } else {
+            // ABSS=0: Travel to specified absolute position
+            final_pos = cmd->value_mm;
+            if (final_pos == current_pos) {
+                printf("Already at absolute position %.2f mm\n", current_pos);
+                return CLI_ERR_OK;
+            }
+
+            if (final_pos > current_pos) {
+                direction = CLI_DIR_OPEN;
+                target_distance = final_pos - current_pos;
+            } else {
+                direction = CLI_DIR_CLOSE;
+                target_distance = current_pos - final_pos;
+            }
         }
     } else {
-        if (direction == CLI_DIR_OPEN) {
-            final_pos = current_pos + target_distance;
+        // Handle RELS mode (soft stop for relative mode)
+        if (rel_soft_stop == 1) {
+            // RELS=1: Travel towards near_stop with -100mm limit (close direction)
+            if (direction == CLI_DIR_CLOSE) {
+                target_distance = 100.0f;  // Move up to 100mm towards near_stop
+                final_pos = current_pos - target_distance;  // For range check only
+                printf("CMD ACK: RELS mode=1, traveling towards near_stop\n");
+            } else {
+                // Open direction is unrestricted
+                final_pos = current_pos + target_distance;
+            }
         } else {
-            final_pos = current_pos - target_distance;
+            // RELS=0: Don't allow travel below 0mm
+            if (direction == CLI_DIR_OPEN) {
+                final_pos = current_pos + target_distance;
+            } else {
+                // Close direction: limit to not go below 0mm
+                float max_travel = current_pos;  // Maximum we can travel close is to 0mm
+                if (target_distance > max_travel) {
+                    target_distance = max_travel;
+                    printf("CMD ACK: RELS mode=0, limiting travel to 0mm boundary\n");
+                }
+                final_pos = current_pos - target_distance;
+            }
         }
     }
 
-    if (final_pos < CLI_MIN_POS_MM || final_pos > CLI_MAX_POS_MM) {
+    // Skip range check for soft stop modes (ABSS=1 or RELS=1 with close direction)
+    bool is_soft_stop = (cmd->is_absolute && abs_soft_stop == 1) ||
+                       (!cmd->is_absolute && rel_soft_stop == 1 && direction == CLI_DIR_CLOSE);
+
+    if (!is_soft_stop && (final_pos < CLI_MIN_POS_MM || final_pos > CLI_MAX_POS_MM)) {
         return CLI_ERR_OUT_OF_RANGE;
     }
 

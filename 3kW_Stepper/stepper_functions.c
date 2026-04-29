@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdarg.h>
+#include <string.h>
 #include "pico/stdlib.h"
 #include "hardware/watchdog.h"
 #include "hardware/clocks.h"
@@ -49,10 +50,7 @@ void stepper_move(uint16_t speed, float travel_distance, bool direction) {
     sleep_ms(100);
     pico_set_led(false);
     
-    printf("DEBUG: stepper_move ENTERED with speed=%u, distance=%.2f, direction=%u\n", speed, travel_distance, direction);
-    
     uint32_t step_count = (uint32_t)(travel_distance / Step_resolution + 0.5f);
-    printf("DEBUG: calculated step_count=%u\n", step_count);
     
     float pulse_frequency = 0;
 
@@ -82,28 +80,14 @@ void stepper_move(uint16_t speed, float travel_distance, bool direction) {
     uint32_t decel_steps = accel_steps;
 
     uint slice_num = pwm_gpio_to_slice_num(Stepper_PULSE);
-    printf("DEBUG: PWM slice_num=%u for GPIO %d\n", slice_num, Stepper_PULSE);
     pwm_set_clkdiv(slice_num, 1.0f);
     pwm_set_gpio_level(Stepper_PULSE, calculate_pwm_wrap(pulse_frequency) / 2);
 
     // Ensure PWM is disabled at start
     pwm_set_enabled(slice_num, false);
-    printf("DEBUG: PWM initialized and disabled\n");
 
     stop_pulse = false;
     Step_actual = 0;
-
-    printf("DEBUG: Starting move - steps=%u, freq=%.1f Hz, accel_steps=%u, total_time=%.1f ms\n",
-           step_count, pulse_frequency, accel_steps, total_move_ms);
-    
-    // Visual debug: blink LED twice to show PWM setup
-    pico_set_led(true);
-    sleep_ms(50);
-    pico_set_led(false);
-    sleep_ms(50);
-    pico_set_led(true);
-    sleep_ms(50);
-    pico_set_led(false);
 
     // Safety timeout: max 30 seconds for any move
     uint32_t start_time = time_us_32();
@@ -113,13 +97,13 @@ void stepper_move(uint16_t speed, float travel_distance, bool direction) {
         // Check for timeout
         if ((time_us_32() - start_time) > timeout_us) {
             pwm_set_enabled(slice_num, false);
-            printf("DEBUG: Move timed out after 30 seconds at step %u\n", step);
+            printf("Move timed out after 30 seconds\n");
             break;
         }
 
         if (stop_pulse) {
             pwm_set_enabled(slice_num, false);
-            printf("DEBUG: Pulse generation stopped by limit switch at step %u\n", step);
+            printf("Move stopped by limit switch\n");
             break;
         }
 
@@ -153,18 +137,15 @@ void stepper_move(uint16_t speed, float travel_distance, bool direction) {
         }
         Accumulated_Distance = (float)(Accumulated_Steps * Step_resolution);
 
-        // Debug output every 500 steps to reduce spam
-            if (step % 500 == 0) {
-            float percent = (float)(step + 1) / step_count * 100.0f;
-            printf("DEBUG: Step %u/%u completed (%.1f%%)\n", step + 1, step_count, percent);
-            stepper_broadcast("POSITION: %.3f mm (step %u/%u, %.1f%%)\n", Accumulated_Distance, step + 1, step_count, percent);
+        // Minimal progress reporting - only every 2000 steps to reduce overhead
+        if (step % 2000 == 0 && step > 0) {
+            stepper_broadcast("POSITION: %.3f mm\n", Accumulated_Distance);
         }
     }
 
     // Ensure PWM is completely disabled
     pwm_set_enabled(slice_num, false);
-    printf("DEBUG: PWM disabled, move complete\n");
-    stepper_broadcast("FINAL POSITION: %.3f mm (Steps: %ld)\n", Accumulated_Distance, Accumulated_Steps);
+    stepper_broadcast("FINAL POSITION: %.3f mm\n", Accumulated_Distance);
 
     // Visual debug: blink LED three times to show completion
     for(int i = 0; i < 3; i++) {
@@ -173,8 +154,6 @@ void stepper_move(uint16_t speed, float travel_distance, bool direction) {
         pico_set_led(false);
         sleep_ms(100);
     }
-
-    printf("Stepper pulse sequence complete (accumulated steps: %u)\t (accumulated distance: %.3f mm)\n", Accumulated_Steps, Accumulated_Distance);
 }
 
 void stepper_calibrate(void) {
@@ -213,29 +192,33 @@ void stepper_calibrate(void) {
 }
 
 static void stepper_broadcast(const char *fmt, ...) {
-    char buffer[128];
-    va_list args;
-    va_start(args, fmt);
-    int len = vsnprintf(buffer, sizeof(buffer), fmt, args);
-    va_end(args);
+    // During movement, minimize UART output to avoid interrupting PWM timing
+    // Only send critical messages, skip position updates during movement
+    if (strstr(fmt, "FINAL POSITION") != NULL || strstr(fmt, "CALIBRATION") != NULL) {
+        char buffer[128];
+        va_list args;
+        va_start(args, fmt);
+        int len = vsnprintf(buffer, sizeof(buffer), fmt, args);
+        va_end(args);
 
-    if (len <= 0) {
-        return;
-    }
+        if (len <= 0) {
+            return;
+        }
 
-    if (len >= (int)sizeof(buffer)) {
-        len = sizeof(buffer) - 1;
-        buffer[len] = '\0';
-    }
+        if (len >= (int)sizeof(buffer)) {
+            len = sizeof(buffer) - 1;
+            buffer[len] = '\0';
+        }
 
-    printf("%s", buffer);
-    for (int i = 0; i < len; i++) {
-        char ch = buffer[i];
-        if (ch == '\n') {
-            uart_putc(UART_ID, '\r');
-            uart_putc(UART_ID, '\n');
-        } else {
-            uart_putc(UART_ID, ch);
+        printf("%s", buffer);
+        for (int i = 0; i < len; i++) {
+            char ch = buffer[i];
+            if (ch == '\n') {
+                uart_putc(UART_ID, '\r');
+                uart_putc(UART_ID, '\n');
+            } else {
+                uart_putc(UART_ID, ch);
+            }
         }
     }
 }
