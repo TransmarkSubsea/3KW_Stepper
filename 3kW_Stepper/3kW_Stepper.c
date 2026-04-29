@@ -5,7 +5,9 @@
 #include "hardware/uart.h"
 #include "hardware/pwm.h"
 #include "hardware/gpio.h"
+#include "hardware/timer.h"
 #include "stepper.h"
+#include "cli.h"
 
 
 
@@ -17,15 +19,19 @@ volatile uint32_t last_interrupt_time = 0;
 volatile uint32_t Step_actual = 0; // Actual number of pulses generated
 volatile int32_t Accumulated_Steps = 0; // Accumulated steps
 volatile float Accumulated_Distance = 0; // Accumulated distance in mm
+volatile bool Data_Rx = false; // Flag to indicate data received for CLI processing
 
 // Function prototypes
 void stepper_move(uint16_t speed, float travel_distance, bool direction);
 void limit_switch_isr(uint gpio, uint32_t events);
+bool status_timer_callback(struct repeating_timer *t);
+void pico_set_led(bool led_on);
+int pico_led_init(void);
 
 int main()
 {
     stdio_init_all();
-
+    pico_led_init();
     // Watchdog example code
     if (watchdog_caused_reboot()) {
         printf("Rebooted by Watchdog!\n");
@@ -53,10 +59,13 @@ int main()
     // Use some the various UART functions to send out data
     // In a default system, printf will also output via the default UART
     
-    // Send out a string, with CR/LF conversions
-    uart_puts(UART_ID, " Hello, UART!\n");
-    
-    // For more examples of UART use see https://github.com/raspberrypi/pico-examples/tree/master/uart
+    // Initialize CLI system (sets up UART interrupt handler)
+    cli_init();
+
+    // Set up hardware timer for status output every second
+    struct repeating_timer status_timer;
+    add_repeating_timer_ms(1000, status_timer_callback, NULL, &status_timer);
+    printf("> ");
 
     //Set-up stepper pins
     gpio_init(Stepper_EN);
@@ -77,16 +86,21 @@ int main()
 
     gpio_put(Stepper_EN, 0); //Enable stepper driver
     
-    float Travel_distance = 0.1; // Set distance to move in mm
-    uint16_t speed = 14; // Set speed here, range is 1-14 where 1 is slowest and 14 is fastest
-    bool current_direction = 0; // 0 = forward, 1 = reverse
-
+    // Main loop: CLI command processing
     while (true) 
     {
-        stepper_move(speed, Travel_distance, Direction_Open);
-
-        //current_direction = !current_direction; // Toggle direction for next move
-
-        sleep_ms(2000);
+        cli_process();
+        // Status output is handled by hardware timer
+        sleep_ms(1);
     }
+
+}
+
+// Hardware timer callback for status output every second
+bool status_timer_callback(struct repeating_timer *t) {
+    printf("STATUS: Position=%.3f mm, Steps=%ld, Moving=%s\n",
+           Accumulated_Distance,
+           Accumulated_Steps,
+           cli_is_moving() ? "YES" : "NO");
+    return true; // Keep the timer repeating
 }

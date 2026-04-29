@@ -35,7 +35,7 @@ pico_sdk_init()
 
 # Add executable. Default name is the project name, version 0.1
 
-add_executable(3kW_Stepper 3kW_Stepper.c stepper_functions.c )
+add_executable(3kW_Stepper 3kW_Stepper.c stepper_functions.c cli.c )
 
 pico_set_program_name(3kW_Stepper "3kW_Stepper")
 pico_set_program_version(3kW_Stepper "0.1")
@@ -58,6 +58,8 @@ target_include_directories(3kW_Stepper PRIVATE
 target_link_libraries(3kW_Stepper 
         hardware_watchdog
         hardware_clocks
+        hardware_uart
+        hardware_timer
         )
 
 pico_add_extra_outputs(3kW_Stepper)
