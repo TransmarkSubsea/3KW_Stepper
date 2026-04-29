@@ -38,6 +38,10 @@ typedef struct {
 
 // ========== FUNCTION PROTOTYPES ==========
 
+void stepper_move(uint16_t speed, float travel_distance, bool direction);
+int pico_led_init(void);
+void pico_set_led(bool led_on);
+
 /**
  * Initialize the CLI system (sets up serial interrupt handler)
  */

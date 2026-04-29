@@ -19,14 +19,12 @@ volatile uint32_t last_interrupt_time = 0;
 volatile uint32_t Step_actual = 0; // Actual number of pulses generated
 volatile int32_t Accumulated_Steps = 0; // Accumulated steps
 volatile float Accumulated_Distance = 0; // Accumulated distance in mm
+volatile uint32_t Calibration_Steps = 0; // Total steps recorded during calibration
+volatile float Calibration_Distance = 0.0f; // Total distance recorded during calibration
 volatile bool Data_Rx = false; // Flag to indicate data received for CLI processing
 
 // Function prototypes
-void stepper_move(uint16_t speed, float travel_distance, bool direction);
-void limit_switch_isr(uint gpio, uint32_t events);
-bool status_timer_callback(struct repeating_timer *t);
-void pico_set_led(bool led_on);
-int pico_led_init(void);
+
 
 int main()
 {
@@ -70,6 +68,7 @@ int main()
     //Set-up stepper pins
     gpio_init(Stepper_EN);
     gpio_set_dir(Stepper_EN, GPIO_OUT);
+    gpio_put(Stepper_EN, 0); //Enable stepper driver
     gpio_init(Stepper_DIR);
     gpio_set_dir(Stepper_DIR, GPIO_OUT);
     gpio_set_function(Stepper_PULSE, GPIO_FUNC_PWM); // Use PWM for step pulse output
@@ -84,7 +83,7 @@ int main()
     gpio_set_irq_callback(limit_switch_isr);
     irq_set_enabled(IO_IRQ_BANK0, true);
 
-    gpio_put(Stepper_EN, 0); //Enable stepper driver
+
     
     // Main loop: CLI command processing
     while (true) 

@@ -5,14 +5,12 @@
 #include <stdlib.h>
 #include "pico/stdlib.h"
 #include "hardware/uart.h"
+#include "hardware/gpio.h"
 #include "hardware/irq.h"
 #include "cli.h"
 #include "stepper.h"
 
-// Function prototypes
-void stepper_move(uint16_t speed, float travel_distance, bool direction);
-int pico_led_init(void);
-void pico_set_led(bool led_on);
+
 
 // External variables from main
 extern volatile uint32_t Step_actual;
@@ -139,7 +137,7 @@ void cli_process(void) {
     }
 
     // Handle help command
-    if (strcmp(command, "help") == 0 || strcmp(command, "HELP") == 0 || strcmp(command, "?") == 0 || strcmp(command, "?HELP") == 0) {
+    if (strcmp(command, "help") == 0 || strcmp(command, "HELP") == 0) {
         cli_broadcast("=== Stepper Motor CLI ===\n");
         cli_broadcast("Command syntax:\n");
         cli_broadcast("  MOVE ABS <speed> <value>\n");
@@ -152,6 +150,9 @@ void cli_process(void) {
         cli_broadcast("  MOVE ABS 3 250     - Move to absolute position 250mm at speed 3\n");
         cli_broadcast("Other commands:\n");
         cli_broadcast("  STAT    - Show current status\n");
+        cli_broadcast("  CALB    - Run calibration routine\n");
+        cli_broadcast("  ENAB 0  - Enable stepper driver (active low)\n");
+        cli_broadcast("  ENAB 1  - Disable stepper driver\n");
         cli_broadcast("  STOP    - Emergency stop\n");
         cli_broadcast("> ");
         return;
@@ -169,6 +170,17 @@ void cli_process(void) {
             cli_broadcast("> ");
             return;
         }
+        if (strcmp(command, "CALB") == 0 || strcmp(command, "calb") == 0) {
+            cli_broadcast("CALB: last calibration steps=%u, distance=%.3f mm\n", Calibration_Steps, Calibration_Distance);
+            cli_broadcast("> ");
+            return;
+        }
+        if (strcmp(command, "ENAB") == 0 || strcmp(command, "enab") == 0) {
+            bool enabled = (gpio_get(Stepper_EN) == 0);
+            cli_broadcast("ENAB: %s\n", enabled ? "ENABLED" : "DISABLED");
+            cli_broadcast("> ");
+            return;
+        }
         cli_print_error(CLI_ERR_UNKNOWN_COMMAND);
         cli_broadcast("> ");
         return;
@@ -177,6 +189,41 @@ void cli_process(void) {
     // Handle status command
     if (strcmp(command, "status") == 0 || strcmp(command, "STAT") == 0) {
         cli_print_status();
+        cli_broadcast("> ");
+        return;
+    }
+
+    // Handle calibration command
+    if (strcmp(command, "CALB") == 0 || strcmp(command, "calb") == 0) {
+        stepper_calibrate();
+        cli_broadcast("> ");
+        return;
+    }
+
+    // Handle enable/disable command
+    if (strncmp(command, "ENAB", 4) == 0 || strncmp(command, "enab", 4) == 0) {
+        char buffer[CLI_RX_BUFFER_SIZE];
+        strncpy(buffer, command, CLI_RX_BUFFER_SIZE - 1);
+        buffer[CLI_RX_BUFFER_SIZE - 1] = '\0';
+        char *token = strtok(buffer, " ");
+        token = strtok(NULL, " ");
+        if (!token) {
+            cli_print_error(CLI_ERR_INVALID_FORMAT);
+            cli_broadcast("> ");
+            return;
+        }
+        int value = atoi(token);
+        if (value == 1) {
+            gpio_put(Stepper_EN, 0);
+            cli_broadcast("ENAB: ENABLED\n");
+        } else if (value == 0) {
+            gpio_put(Stepper_EN, 1);
+            cli_broadcast("ENAB: DISABLED\n");
+        } else {
+            cli_print_error(CLI_ERR_INVALID_FORMAT);
+            cli_broadcast("> ");
+            return;
+        }
         cli_broadcast("> ");
         return;
     }

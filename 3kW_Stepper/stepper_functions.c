@@ -8,17 +8,9 @@
 #include "hardware/gpio.h"
 #include "stepper.h"
 
-static void stepper_broadcast(const char *fmt, ...);
 
-// Extern declarations for global variables
-extern volatile bool stop_pulse;
-extern volatile uint32_t last_interrupt_time;
-extern const uint32_t DEBOUNCE_MS;
-extern const float Step_resolution;
-extern volatile uint32_t Step_actual;
-extern volatile int32_t Accumulated_Steps;
-extern volatile float Accumulated_Distance;
-extern volatile bool Data_Rx;
+
+
 
 // Perform initialisation if LED pin
 int pico_led_init(void) 
@@ -183,6 +175,41 @@ void stepper_move(uint16_t speed, float travel_distance, bool direction) {
     }
 
     printf("Stepper pulse sequence complete (accumulated steps: %u)\t (accumulated distance: %.3f mm)\n", Accumulated_Steps, Accumulated_Distance);
+}
+
+void stepper_calibrate(void) {
+    stepper_broadcast("CALIBRATION: Starting homing sequence...\n");
+
+    // First run toward the near stop until the switch activates
+    if (!gpio_get(Near_Stop)) {
+        stop_pulse = false;
+        stepper_move(1, 10000.0f, Direction_Close);
+    }
+
+    if (!gpio_get(Near_Stop)) {
+        stepper_broadcast("CALIBRATION: Near-stop not reached, aborting calibration.\n");
+        return;
+    }
+
+    Accumulated_Steps = 0;
+    Accumulated_Distance = 0.0f;
+    stop_pulse = false;
+    stepper_broadcast("CALIBRATION: Near-stop reached, resetting position counters.\n");
+
+    // Then run toward the far stop until the opposite switch activates
+    if (!gpio_get(Far_Stop)) {
+        stop_pulse = false;
+        stepper_move(1, 10000.0f, Direction_Open);
+    }
+
+    if (!gpio_get(Far_Stop)) {
+        stepper_broadcast("CALIBRATION: Far-stop not reached, aborting calibration.\n");
+        return;
+    }
+
+    Calibration_Steps = Accumulated_Steps;
+    Calibration_Distance = Accumulated_Distance;
+    stepper_broadcast("CALIBRATION: Completed. Total steps = %u, total distance = %.3f mm\n", Calibration_Steps, Calibration_Distance);
 }
 
 static void stepper_broadcast(const char *fmt, ...) {
