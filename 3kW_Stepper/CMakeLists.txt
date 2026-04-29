@@ -42,7 +42,7 @@ pico_set_program_version(3kW_Stepper "0.1")
 
 # Modify the below lines to enable/disable output over UART/USB
 pico_enable_stdio_uart(3kW_Stepper 0)
-pico_enable_stdio_usb(3kW_Stepper 0)
+pico_enable_stdio_usb(3kW_Stepper 1)
 
 # Add the standard library to the build
 target_link_libraries(3kW_Stepper

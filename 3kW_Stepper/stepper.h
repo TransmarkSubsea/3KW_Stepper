@@ -17,3 +17,5 @@
 #define Near_Stop 19
 #define Far_Stop 20
 #define steps_per_rev 1600 //200 steps/rev with 8x microstepping
+#define Direction_Open 0
+#define Direction_Close !Direction_Open

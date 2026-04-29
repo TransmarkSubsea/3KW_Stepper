@@ -9,14 +9,13 @@
 
 
 
-// Volatile flag to signal pulse generation to stop
-volatile bool stop_pulse = false;
-volatile uint32_t last_interrupt_time = 0;
-const uint32_t DEBOUNCE_MS = 20; // Debounce time in milliseconds
 //wheel size is 18 teeth and each tooth has a pitch of 2.032 mm, so one revolution moves the wheel 36.576 mm. With 1600 steps per revolution at 8x microstepping, each step moves the wheel 0.02286 mm.
 const float Step_resolution = 0.02286; //1 step moves 0.02286 mm at 8x microstepping 
-
-uint32_t Step_actual = 0; // Actual number of pulses generated
+const uint32_t DEBOUNCE_MS = 10; // Debounce time in milliseconds
+volatile bool stop_pulse = false;// Volatile flag to signal pulse generation to stop
+volatile uint32_t last_interrupt_time = 0;
+volatile uint32_t Step_actual = 0; // Actual number of pulses generated
+volatile int32_t Accumulated_Steps = 0; // Accumulated steps
 
 // Function prototypes
 void stepper_move(uint16_t speed, float travel_distance, bool direction);
@@ -83,9 +82,12 @@ int main()
 
     while (true) 
     {
-        stepper_move(speed, Travel_distance, current_direction);
-
-        current_direction = !current_direction; // Toggle direction for next move
+        stepper_move(speed, Travel_distance, Direction_Open);
+        sleep_ms(100);
+        stepper_move(speed, Travel_distance, Direction_Open);
+        sleep_ms(100);
+        stepper_move(speed, Travel_distance, Direction_Close);
+        //current_direction = !current_direction; // Toggle direction for next move
 
         sleep_ms(2000);
     }

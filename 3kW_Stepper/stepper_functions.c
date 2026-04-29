@@ -12,14 +12,16 @@ extern volatile bool stop_pulse;
 extern volatile uint32_t last_interrupt_time;
 extern const uint32_t DEBOUNCE_MS;
 extern const float Step_resolution;
-extern uint32_t Step_actual;
+extern volatile uint32_t Step_actual;
+extern volatile int32_t Accumulated_Steps;
 
 // Function to move stepper motor
 void stepper_move(uint16_t speed, float travel_distance, bool direction) {
     uint32_t step_count = (uint32_t)(travel_distance / Step_resolution + 0.5f);
     float pulse_frequency = 0;
 
-    if (speed > 11) {
+    if (speed > 11) 
+    {
         speed = 11; // Limit speed to max of 11 to prevent exceeding max pulse frequency
     } else if (speed < 1) {
         speed = 1; // Limit speed to min of 1 to prevent zero frequency
@@ -28,7 +30,7 @@ void stepper_move(uint16_t speed, float travel_distance, bool direction) {
 
     gpio_put(Stepper_DIR, direction); // Set direction
 
-    printf("Starting stepper pulse sequence using PWM (%u pulses at %.1f Hz)\n", step_count, pulse_frequency);
+    //printf("Starting stepper pulse sequence using PWM (%u pulses at %.1f Hz)\n", step_count, pulse_frequency);
 
     uint slice_num = pwm_gpio_to_slice_num(Stepper_PULSE);
     pwm_set_clkdiv(slice_num, 1.0f);
@@ -41,8 +43,10 @@ void stepper_move(uint16_t speed, float travel_distance, bool direction) {
 
     stop_pulse = false;
     Step_actual = 0;
-    for (uint32_t step = 0; step < step_count; ++step) {
-        if (stop_pulse) {
+    for (uint32_t step = 0; step < step_count; ++step) 
+    {
+        if (stop_pulse) 
+        {
             pwm_set_enabled(slice_num, false);
             printf("Pulse generation stopped by limit switch\n");
             break;
@@ -56,26 +60,40 @@ void stepper_move(uint16_t speed, float travel_distance, bool direction) {
 
         pwm_set_enabled(slice_num, false);
         Step_actual++;
+        if (direction == Direction_Open) 
+        {
+            Accumulated_Steps++;
+        } else {
+            Accumulated_Steps--;
+        }
     }
 
-    printf("Stepper pulse sequence complete (actual pulses: %u)\n", Step_actual);
+    printf("Stepper pulse sequence complete (accumulated steps: %u)\n", Accumulated_Steps);
 }
 
 // Interrupt handler for limit switches with debouncing
-void limit_switch_isr(uint gpio, uint32_t events) {
+void limit_switch_isr(uint gpio, uint32_t events) 
+{
     uint32_t current_time = time_us_32() / 1000; // Convert to ms
     
     // Debounce check
-    if ((current_time - last_interrupt_time) < DEBOUNCE_MS) {
+    if ((current_time - last_interrupt_time) < DEBOUNCE_MS) 
+    {
         return;
     }
     
     last_interrupt_time = current_time;
     
-    if ((gpio == Near_Stop || gpio == Far_Stop) && (events & GPIO_IRQ_LEVEL_HIGH)) {
-        if (gpio_get(Near_Stop) || gpio_get(Far_Stop)) {
+    if ((gpio == Near_Stop || gpio == Far_Stop) && (events & GPIO_IRQ_LEVEL_HIGH)) 
+    {
+        if (gpio_get(Near_Stop) || gpio_get(Far_Stop)) 
+        {
             stop_pulse = true;
             printf("Limit switch activated: %s\n", gpio == Near_Stop ? "Near_Stop" : "Far_Stop");
+            if (gpio == Near_Stop) 
+            {
+                Accumulated_Steps = 0; // Update accumulated steps when near stop is hit
+            }       
         }
     }
 }
